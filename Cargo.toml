@@ -1,0 +1,9 @@
+[package]
+name = "flocking"
+version = "0.1.0"
+authors = ["kvey <colton@coltonpierson.com>"]
+
+[dependencies]
+cgmath = "0.16.0"
+rand = "0.4"
+termion = "1"
