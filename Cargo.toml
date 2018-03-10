@@ -7,3 +7,5 @@ authors = ["kvey <colton@coltonpierson.com>"]
 cgmath = "0.16.0"
 rand = "0.4"
 termion = "1"
+rayon = "1.0.0"
+spade = "1.4.0"

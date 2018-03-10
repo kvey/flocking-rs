@@ -1,6 +1,7 @@
 extern crate cgmath;
 extern crate rand;
 extern crate termion;
+extern crate rayon;
 use cgmath::Vector2;
 use cgmath::InnerSpace;
 use cgmath::MetricSpace;
@@ -9,6 +10,7 @@ use rand::Rng;
 
 use std::f64::consts::PI;
 
+use rayon::prelude::*;
 
 use termion::{clear, cursor, style};
 use termion::raw::IntoRawMode;
@@ -60,16 +62,31 @@ pub fn main() {
 
 
 fn start<W: Write, R: Read>(mut stdout: W, stdin: R, mut flock: Flock) {
+    let last_update = std::time::Instant::now();
+    // let sixteen_ms = std::time::Duration::from_millis(16); // 60 FPS
+    let sixteen_ms = std::time::Duration::from_millis(28); // 30 FPS
     loop {
+        let duration_since_last_update = std::time::Instant::now().duration_since(last_update);
+        if duration_since_last_update < sixteen_ms {
+            std::thread::sleep(sixteen_ms - duration_since_last_update);
+        }
+
         write!(stdout, "{}", clear::All).unwrap();
         flock.run();
         stdout.flush().unwrap();
+
         for b in flock.boids.iter() {
-            // println!("x:{} y:{}", b.position.x, b.position.y);
-            // println!("x:{} y:{}", b.pos_x(), b.pos_y());
             write!(stdout, "{}", cursor::Goto(b.pos_x(), b.pos_y())).unwrap();
             stdout.write(b.render().as_bytes()).unwrap();
         }
+
+
+        // for b in flock.boids.iter() {
+        //     // println!("x:{} y:{}", b.position.x, b.position.y);
+        //     // println!("x:{} y:{}", b.pos_x(), b.pos_y());
+        //     write!(stdout, "{}", cursor::Goto(b.pos_x(), b.pos_y())).unwrap();
+        //     stdout.write(b.render().as_bytes()).unwrap();
+        // }
     }
 
 }
@@ -80,7 +97,7 @@ fn init<W: Write, R: Read>(mut stdout: W, stdin: R, w: u16, h: u16) {
     // Set the initial game state.
     let mut flock = Flock::new();
     // Add an initial set of boids into the system
-    for _ in 0..400 {
+    for _ in 0..500 {
         flock.add_boid(Boid::new(( w as f64)/2.0,( h as f64 )/2.0, w as f64, h as f64));
     }
     // flock.add_boid(Boid::new(width/2.0,height/2.0));
@@ -118,10 +135,11 @@ impl Flock {
 
     pub fn run(&mut self) {
         let clone_boids = self.boids.clone();
-        for mut b in self.boids.iter_mut() {
-            b.run(&clone_boids);
+
+        self.boids.par_iter_mut().for_each(|b| {
+            ( *b ).run(&clone_boids);
             // println!("{:?}", b);
-        }
+        });
     }
 
     pub fn add_boid(&mut self, b: Boid) {
@@ -202,16 +220,19 @@ impl Boid {
         let mut sep = self.separate(&boids);
         let mut ali = self.align(&boids);
         let mut coh = self.cohesion(&boids);
+        let mut grav = self.gravity();
 
         // Arbitrarily weight these forces
         sep *= 1.5;
         ali *= 1.0;
         coh *= 1.0;
+        grav *= 0.5;
 
         // Add the force vectors to acceleration
         self.apply_force(sep);
         self.apply_force(ali);
         self.apply_force(coh);
+        self.apply_force(grav);
     }
 
     fn update(&mut self) {
@@ -268,7 +289,7 @@ impl Boid {
 
 
     fn separate(&mut self, boids: &Vec<Boid>) -> Vector2<f64> {
-        let desired_separation = 10.0;
+        let desired_separation = 5.0;
         let mut steer = Vector2::new(0.0, 0.0);
         let mut count = 0.0;
         // For every boid in the system, check if it's too close
@@ -315,7 +336,7 @@ impl Boid {
 
 
     fn align(&mut self, boids: &Vec<Boid>) -> Vector2<f64> {
-        let neighbor_dist = 30.0;
+        let neighbor_dist = 20.0;
         let mut sum = Vector2::new(0.0,0.0);
         let mut count = 0.0;
         for other in boids {
@@ -350,7 +371,7 @@ impl Boid {
     }
 
     fn cohesion(&mut self, boids: &Vec<Boid>) -> Vector2<f64> {
-        let neighbor_dist = 30.0;
+        let neighbor_dist = 20.0;
         let mut sum = Vector2::new(0.0, 0.0);   // Start with empty vector to accumulate all positions
         let mut count: f64 = 0.0;
         for other in boids {
@@ -368,5 +389,12 @@ impl Boid {
         else {
             Vector2::new(0.0, 0.0)
         }
+    }
+
+
+    fn gravity(&mut self) -> Vector2<f64> {
+        let x = self.width/2.0;
+        let y = self.height/2.0;
+        self.seek(Vector2::new(x,y))
     }
 }
